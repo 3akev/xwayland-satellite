@@ -969,7 +969,7 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
 
         let attrs = &mut self.world.get::<&mut WindowData>(id).unwrap().attrs;
         attrs.group = hints.window_group;
-        attrs.acquire_input_via_wm = hints.acquire_input_via_wm;
+        attrs.acquire_input_via_wm = hints.accepts_input;
     }
 
     pub fn set_take_focus(&mut self, window: x::Window, has_take_focus: bool) {

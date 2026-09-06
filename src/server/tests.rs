@@ -1342,7 +1342,7 @@ fn window_group_properties() {
         win,
         super::WmHints {
             window_group: Some(prop_win),
-            acquire_input_via_wm: false,
+            accepts_input: false,
         },
     );
     f.satellite.map_window(win);
@@ -1690,7 +1690,7 @@ fn popup_focus_on_map_with_input_hint() {
         win_popup,
         super::WmHints {
             window_group: None,
-            acquire_input_via_wm: true,
+            accepts_input: true,
         },
     );
     f.map_window(&comp, win_popup, &surface.obj, &buffer);
@@ -1731,7 +1731,7 @@ fn popup_no_focus_input_hint_wm_take_focus() {
         win_popup,
         super::WmHints {
             window_group: None,
-            acquire_input_via_wm: true,
+            accepts_input: true,
         },
     );
     f.satellite.set_take_focus(win_popup, true);

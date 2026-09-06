@@ -1010,7 +1010,7 @@ impl From<&[u32]> for WmNormalHints {
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub struct WmHints {
     pub window_group: Option<x::Window>,
-    pub acquire_input_via_wm: bool,
+    pub accepts_input: bool,
 }
 
 impl From<&[u32]> for WmHints {
@@ -1022,9 +1022,8 @@ impl From<&[u32]> for WmHints {
             let window = x::Window::new(value[8]);
             ret.window_group = Some(window);
         }
-        if flags.contains(WmHintsFlags::Input) {
-            ret.acquire_input_via_wm = value[1] == 1;
-        }
+        // if input hint isn't present, set it to true anyways incase the client is misbehaving
+        ret.accepts_input = !flags.contains(WmHintsFlags::Input) || value[1] == 1;
 
         ret
     }
