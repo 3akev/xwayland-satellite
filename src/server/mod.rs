@@ -101,9 +101,10 @@ where
 
 #[derive(Default, Debug)]
 struct WindowAttributes {
-    acquire_input_via_wm: bool,
+    accepts_input: bool,
     has_take_focus: bool,
     role: WindowRole,
+    override_redirect: bool,
     dims: WindowDims,
     size_hints: Option<WmNormalHints>,
     title: Option<WmName>,
@@ -111,13 +112,6 @@ struct WindowAttributes {
     group: Option<x::Window>,
     decorations: Option<Decorations>,
     transient_for: Option<x::Window>,
-}
-
-impl WindowAttributes {
-    /// AKA "Passive" input model
-    fn require_wm_focus(&self) -> bool {
-        self.acquire_input_via_wm && !self.has_take_focus
-    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]
@@ -140,6 +134,7 @@ impl WindowData {
             mapped: false,
             attrs: WindowAttributes {
                 role: WindowRole::new_basic(override_redirect),
+                override_redirect,
                 dims,
                 ..Default::default()
             },
@@ -398,6 +393,7 @@ struct FocusData {
     window: x::Window,
     output_name: Option<String>,
     is_popup: bool,
+    is_take_focus: bool,
 }
 
 #[derive(Copy, Clone, Default)]
@@ -421,6 +417,9 @@ impl<S: X11Selection> XConnection for NoConnection<S> {
     type X11Selection = S;
     fn focus_window(&mut self, _: x::Window, _: Option<String>) {
         debug!("could not focus window without XWayland initialized");
+    }
+    fn send_take_focus(&mut self, _: x::Window) {
+        debug!("could not send take focus without XWayland initialized");
     }
     fn close_window(&mut self, _: x::Window) {
         debug!("could not close window without XWayland initialized");
@@ -742,15 +741,20 @@ impl<C: XConnection> ServerState<C> {
                 window,
                 output_name,
                 is_popup,
+                is_take_focus,
             }) = self.to_focus.take()
             {
                 debug!(
-                    "focusing {} {window:?}",
+                    "focusing (take_focus={is_take_focus:?}) {} {window:?}",
                     if is_popup { "popup" } else { "window" }
                 );
-                self.connection.focus_window(window, output_name);
-                if !is_popup {
-                    self.last_focused_toplevel = Some(window);
+                if is_take_focus {
+                    self.connection.send_take_focus(window);
+                } else {
+                    self.connection.focus_window(window, output_name);
+                    if !is_popup {
+                        self.last_focused_toplevel = Some(window);
+                    }
                 }
             } else if self.unfocus {
                 self.connection.focus_window(x::WINDOW_NONE, None);
@@ -888,9 +892,24 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         self.windows.insert(window, id);
     }
 
+    pub fn set_override_redirect(&mut self, window: x::Window, override_redirect: bool) {
+        let Some(id) = self.windows.get(&window).copied() else {
+            debug!(
+                "not setting override_redirect {override_redirect} for unknown window {window:?}"
+            );
+            return;
+        };
+
+        self.world
+            .get::<&mut WindowData>(id)
+            .unwrap()
+            .attrs
+            .override_redirect = override_redirect;
+    }
+
     pub fn set_window_role(&mut self, window: x::Window, role: WindowRole) {
         let Some(id) = self.windows.get(&window).copied() else {
-            debug!("not setting popup for unknown window {window:?}");
+            debug!("not setting role {role:?} for unknown window {window:?}");
             return;
         };
 
@@ -969,7 +988,7 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
 
         let attrs = &mut self.world.get::<&mut WindowData>(id).unwrap().attrs;
         attrs.group = hints.window_group;
-        attrs.acquire_input_via_wm = hints.accepts_input;
+        attrs.accepts_input = hints.accepts_input;
     }
 
     pub fn set_take_focus(&mut self, window: x::Window, has_take_focus: bool) {

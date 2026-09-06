@@ -160,6 +160,7 @@ struct WindowData {
 #[derive(Default)]
 struct FakeXConnection {
     focused_window: Option<Window>,
+    send_take_focus_window: Option<Window>,
     windows: HashMap<Window, WindowData>,
     set_window_dims_counter: usize,
 }
@@ -232,6 +233,15 @@ impl super::XConnection for FakeXConnection {
             "Unknown window: {window:?}"
         );
         self.focused_window = window.into();
+    }
+
+    #[track_caller]
+    fn send_take_focus(&mut self, window: x::Window) {
+        assert!(
+            self.windows.contains_key(&window),
+            "Unknown window: {window:?}"
+        );
+        self.send_take_focus_window = window.into();
     }
 
     fn raise_to_top(&mut self, window: Window) {
@@ -856,6 +866,56 @@ impl TestFixture<FakeXConnection> {
         }
 
         (surface, popup_id)
+    }
+
+    #[track_caller]
+    fn setup_popup_focus_case(
+        &mut self,
+        comp: &Compositor,
+        override_redirect: bool,
+        accepts_input: Option<bool>,
+        take_focus: bool,
+    ) -> (Window, Window) {
+        let win_toplevel = Window::new(1);
+        self.create_toplevel(comp, win_toplevel);
+
+        let win_popup = Window::new(2);
+        let (buffer, surface) = comp.create_surface();
+        let data = WindowData {
+            mapped: true,
+            dims: WindowDims {
+                x: 10,
+                y: 20,
+                width: 100,
+                height: 50,
+            },
+            fullscreen: false,
+        };
+        self.new_window(win_popup, override_redirect, data);
+        if !override_redirect {
+            self.satellite
+                .set_window_role(win_popup, crate::xstate::WindowRole::Popup);
+        }
+        if let Some(accepts_input) = accepts_input {
+            self.satellite.set_win_hints(
+                win_popup,
+                super::WmHints {
+                    window_group: None,
+                    accepts_input,
+                },
+            );
+        }
+        if take_focus {
+            self.satellite.set_take_focus(win_popup, true);
+        }
+        self.map_window(comp, win_popup, &surface.obj, &buffer);
+        self.run();
+
+        let popup_id = self.check_new_surface();
+        self.testwl.configure_popup(popup_id);
+        self.run();
+
+        (win_toplevel, win_popup)
     }
 
     #[track_caller]
@@ -1647,104 +1707,44 @@ fn override_redirect_choose_hover_window() {
 }
 
 #[test]
-fn popup_no_focus_without_input_hint() {
-    let (mut f, comp) = TestFixture::new_with_compositor();
+fn popup_override_redirect_never_focused_nor_offered() {
+    for accepts_input in [None, Some(true), Some(false)] {
+        for take_focus in [false, true] {
+            let (mut f, comp) = TestFixture::new_with_compositor();
 
-    let win_toplevel = Window::new(1);
-    let (_, toplevel_id) = f.create_toplevel(&comp, win_toplevel);
+            let (win_toplevel, _) =
+                f.setup_popup_focus_case(&comp, true, accepts_input, take_focus);
+            assert_eq!(
+                f.connection().focused_window,
+                Some(win_toplevel),
+                "accepts_input={accepts_input:?} take_focus={take_focus}"
+            );
+            assert_eq!(
+                f.connection().send_take_focus_window,
+                None,
+                "accepts_input={accepts_input:?} take_focus={take_focus}"
+            );
+        }
+    }
+}
 
-    // A popup without acquire_input_via_wm should not receive focus.
-    let win_popup = Window::new(2);
-    f.create_popup(
-        &comp,
-        PopupBuilder::new(win_popup, win_toplevel, toplevel_id),
-    );
-    assert_eq!(f.connection().focused_window, Some(win_toplevel));
+#[test]
+fn popup_send_take_focus_when_advertised() {
+    for accepts_input in [None, Some(true), Some(false)] {
+        let (mut f, comp) = TestFixture::new_with_compositor();
+
+        let (win_toplevel, win_popup) = f.setup_popup_focus_case(&comp, false, accepts_input, true);
+        assert_eq!(f.connection().focused_window, Some(win_toplevel));
+        assert_eq!(f.connection().send_take_focus_window, Some(win_popup));
+    }
 }
 
 #[test]
 fn popup_focus_on_map_with_input_hint() {
     let (mut f, comp) = TestFixture::new_with_compositor();
 
-    let win_toplevel = Window::new(1);
-    let (_, toplevel_id) = f.create_toplevel(&comp, win_toplevel);
-
-    // A popup with acquire_input_via_wm should receive X11 keyboard focus
-    // at map time, matching what a real X11 WM does for windows with
-    // WM_HINTS input=True.
-    let win_popup = Window::new(2);
-    let (buffer, surface) = comp.create_surface();
-    let dims = WindowDims {
-        x: 10,
-        y: 20,
-        width: 100,
-        height: 50,
-    };
-    let data = WindowData {
-        mapped: true,
-        dims,
-        fullscreen: false,
-    };
-    f.new_window(win_popup, true, data);
-    f.satellite.set_win_hints(
-        win_popup,
-        super::WmHints {
-            window_group: None,
-            accepts_input: true,
-        },
-    );
-    f.map_window(&comp, win_popup, &surface.obj, &buffer);
-    f.run();
-
-    let popup_id = f.check_new_surface();
-    assert_ne!(popup_id, toplevel_id);
-
-    f.testwl.configure_popup(popup_id);
-    f.run();
-
-    // Focus should have been given directly to the popup at map time.
+    let (_, win_popup) = f.setup_popup_focus_case(&comp, false, Some(true), false);
     assert_eq!(f.connection().focused_window, Some(win_popup));
-}
-
-#[test]
-fn popup_no_focus_input_hint_wm_take_focus() {
-    let (mut f, comp) = TestFixture::new_with_compositor();
-
-    let win_toplevel = Window::new(1);
-    let (_, toplevel_id) = f.create_toplevel(&comp, win_toplevel);
-
-    let win_popup = Window::new(2);
-    let (buffer, surface) = comp.create_surface();
-    let dims = WindowDims {
-        x: 10,
-        y: 20,
-        width: 100,
-        height: 50,
-    };
-    let data = WindowData {
-        mapped: true,
-        dims,
-        fullscreen: false,
-    };
-    f.new_window(win_popup, true, data);
-    f.satellite.set_win_hints(
-        win_popup,
-        super::WmHints {
-            window_group: None,
-            accepts_input: true,
-        },
-    );
-    f.satellite.set_take_focus(win_popup, true);
-    f.map_window(&comp, win_popup, &surface.obj, &buffer);
-    f.run();
-
-    let popup_id = f.check_new_surface();
-    assert_ne!(popup_id, toplevel_id);
-
-    f.testwl.configure_popup(popup_id);
-    f.run();
-
-    assert_eq!(f.connection().focused_window, Some(win_toplevel));
 }
 
 #[track_caller]

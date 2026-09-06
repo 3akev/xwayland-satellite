@@ -431,13 +431,14 @@ impl SurfaceEvents {
                 });
 
                 if first_configure {
-                    let window_data = data.get::<&WindowData>().unwrap();
-                    if window_data.attrs.require_wm_focus() {
-                        let window = *data.get::<&x::Window>().unwrap();
+                    let attrs = &data.get::<&WindowData>().unwrap().attrs;
+                    let window = *data.get::<&x::Window>().unwrap();
+                    if !attrs.override_redirect && (attrs.has_take_focus || attrs.accepts_input) {
                         state.inner.to_focus = Some(FocusData {
                             window,
                             output_name: None,
                             is_popup: true,
+                            is_take_focus: attrs.has_take_focus,
                         });
                     }
                 }
@@ -864,10 +865,17 @@ impl Event for client::wl_keyboard::Event {
                     serial,
                 ));
                 let output_name = get_output_name(output, &state.world);
+                let window_data = data.get::<&WindowData>();
+                let is_take_focus = if let Some(data) = window_data {
+                    data.attrs.has_take_focus
+                } else {
+                    false
+                };
                 state.to_focus = Some(FocusData {
                     window: *window,
                     output_name,
                     is_popup: false,
+                    is_take_focus,
                 });
                 keyboard.enter(serial, surface, keys);
             }
