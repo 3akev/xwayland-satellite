@@ -873,7 +873,7 @@ impl TestFixture<FakeXConnection> {
         &mut self,
         comp: &Compositor,
         override_redirect: bool,
-        accepts_input: Option<bool>,
+        accepts_input: bool,
         take_focus: bool,
     ) -> (Window, Window) {
         let win_toplevel = Window::new(1);
@@ -896,15 +896,14 @@ impl TestFixture<FakeXConnection> {
             self.satellite
                 .set_window_role(win_popup, crate::xstate::WindowRole::Popup);
         }
-        if let Some(accepts_input) = accepts_input {
-            self.satellite.set_win_hints(
-                win_popup,
-                super::WmHints {
-                    window_group: None,
-                    accepts_input,
-                },
-            );
-        }
+
+        self.satellite.set_win_hints(
+            win_popup,
+            super::WmHints {
+                window_group: None,
+                accepts_input,
+            },
+        );
         if take_focus {
             self.satellite.set_take_focus(win_popup, true);
         }
@@ -1708,7 +1707,7 @@ fn override_redirect_choose_hover_window() {
 
 #[test]
 fn popup_override_redirect_never_focused_nor_offered() {
-    for accepts_input in [None, Some(true), Some(false)] {
+    for accepts_input in [true, false] {
         for take_focus in [false, true] {
             let (mut f, comp) = TestFixture::new_with_compositor();
 
@@ -1730,7 +1729,7 @@ fn popup_override_redirect_never_focused_nor_offered() {
 
 #[test]
 fn popup_send_take_focus_when_advertised() {
-    for accepts_input in [None, Some(true), Some(false)] {
+    for accepts_input in [true, false] {
         let (mut f, comp) = TestFixture::new_with_compositor();
 
         let (win_toplevel, win_popup) = f.setup_popup_focus_case(&comp, false, accepts_input, true);
@@ -1743,8 +1742,16 @@ fn popup_send_take_focus_when_advertised() {
 fn popup_focus_on_map_with_input_hint() {
     let (mut f, comp) = TestFixture::new_with_compositor();
 
-    let (_, win_popup) = f.setup_popup_focus_case(&comp, false, Some(true), false);
+    let (_, win_popup) = f.setup_popup_focus_case(&comp, false, true, false);
     assert_eq!(f.connection().focused_window, Some(win_popup));
+}
+
+#[test]
+fn popup_no_focus_without_input_hint() {
+    let (mut f, comp) = TestFixture::new_with_compositor();
+
+    let (win_toplevel, _) = f.setup_popup_focus_case(&comp, false, false, false);
+    assert_eq!(f.connection().focused_window, Some(win_toplevel));
 }
 
 #[track_caller]
