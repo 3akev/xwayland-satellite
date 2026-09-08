@@ -866,11 +866,7 @@ impl Event for client::wl_keyboard::Event {
                 ));
                 let output_name = get_output_name(output, &state.world);
                 let window_data = data.get::<&WindowData>();
-                let is_take_focus = if let Some(data) = window_data {
-                    data.attrs.has_take_focus
-                } else {
-                    false
-                };
+                let is_take_focus = window_data.as_ref().is_some_and(|d| d.attrs.has_take_focus);
                 state.to_focus = Some(FocusData {
                     window: *window,
                     output_name,
