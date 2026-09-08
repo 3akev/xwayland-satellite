@@ -114,6 +114,12 @@ struct WindowAttributes {
     transient_for: Option<x::Window>,
 }
 
+impl WindowAttributes {
+    fn require_wm_focus(&self) -> bool {
+        !self.override_redirect && (self.has_take_focus || self.accepts_input)
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]
 struct WindowOutputOffset {
     x: i32,

@@ -431,14 +431,14 @@ impl SurfaceEvents {
                 });
 
                 if first_configure {
-                    let attrs = &data.get::<&WindowData>().unwrap().attrs;
-                    let window = *data.get::<&x::Window>().unwrap();
-                    if !attrs.override_redirect && (attrs.has_take_focus || attrs.accepts_input) {
+                    let window_data = data.get::<&WindowData>().unwrap();
+                    if window_data.attrs.require_wm_focus() {
+                        let window = *data.get::<&x::Window>().unwrap();
                         state.inner.to_focus = Some(FocusData {
                             window,
                             output_name: None,
                             is_popup: true,
-                            is_take_focus: attrs.has_take_focus,
+                            is_take_focus: window_data.attrs.has_take_focus,
                         });
                     }
                 }
