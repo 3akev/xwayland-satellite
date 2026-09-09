@@ -399,7 +399,7 @@ struct FocusData {
     window: x::Window,
     output_name: Option<String>,
     is_popup: bool,
-    is_take_focus: bool,
+    has_take_focus: bool,
 }
 
 #[derive(Copy, Clone, Default)]
@@ -747,14 +747,14 @@ impl<C: XConnection> ServerState<C> {
                 window,
                 output_name,
                 is_popup,
-                is_take_focus,
+                has_take_focus,
             }) = self.to_focus.take()
             {
                 debug!(
-                    "focusing (take_focus={is_take_focus:?}) {} {window:?}",
+                    "focusing (take_focus={has_take_focus:?}) {} {window:?}",
                     if is_popup { "popup" } else { "window" }
                 );
-                if is_take_focus {
+                if has_take_focus {
                     self.connection.send_take_focus(window);
                 } else {
                     self.connection.focus_window(window, output_name);
